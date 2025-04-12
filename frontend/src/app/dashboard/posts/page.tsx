@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
 import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import {
   Dialog,
   DialogContent,
@@ -10,115 +12,81 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ColumnDef } from "@tanstack/react-table";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
-import { DataTable } from "@/components/ui/data-table";
-import { useForm } from "react-hook-form";
-import Image from "next/image";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import ImageExtension from "@tiptap/extension-image";
-import TextAlign from "@tiptap/extension-text-align";
-import Underline from "@tiptap/extension-underline";
-import Heading from "@tiptap/extension-heading";
-import Toolbar from "@/components/custom/editor-toolbar";
-
-interface Post {
-  id: number;
-  title: string;
-  seo_description: string;
-  seo_keywords: string;
-  content: string;
-  thumbnail: string;
-}
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  ColumnDef,
+} from "@tanstack/react-table"; // Import thêm Column, Row từ react-table
+import QuillWrapper from "@/app/dashboard/products/QuillWrapper"; // Đảm bảo đường dẫn đúng
 
 export default function PostsPage() {
-  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [editingPost, setEditingPost] = useState<Post | null>(null);
-  const { register, handleSubmit, setValue, reset, watch } = useForm();
-
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      ImageExtension.configure({ inline: false }),
-      Underline,
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-      Heading.configure({ levels: [1, 2, 3] }),
-    ],
+  const [editingPost, setEditingPost] = useState<any | null>(null);
+  const [formData, setFormData] = useState({
+    title: "",
+    seo_description: "",
+    seo_keywords: "",
     content: "",
-    onUpdate: ({ editor }) => {
-      setValue("content", editor.getHTML());
-    },
+    thumbnail: "",
   });
+  const [posts, setPosts] = useState<any[]>([]);
 
-  const { data: posts = [] } = useQuery<Post[]>({
-    queryKey: ["posts"],
-    queryFn: async () => {
-      const res = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/posts`
-      );
-      return res.data;
-    },
-  });
+  const ReactQuill = dynamic(() => import("react-quill"), { ssr: false });
 
-  const mutation = useMutation({
-    mutationFn: async (formData: FormData) => {
+  // Fetch danh sách bài viết từ API
+  useEffect(() => {
+    const fetchPosts = async () => {
+      try {
+        const response = await axios.get("http://localhost:5000/api/posts");
+        setPosts(response.data);
+      } catch (err) {
+        console.error("Lỗi khi lấy bài viết:", err);
+      }
+    };
+    fetchPosts();
+  }, []);
+
+  const handleAddOrUpdate = async () => {
+    const data = new FormData();
+    data.append("title", formData.title);
+    data.append("seo_description", formData.seo_description);
+    data.append("seo_keywords", formData.seo_keywords);
+    data.append("content", formData.content);
+    data.append("thumbnail", formData.thumbnail);
+
+    try {
       if (editingPost) {
         await axios.put(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/posts/${editingPost.id}`,
-          formData
+          `http://localhost:5000/api/posts/${editingPost.id}`,
+          data
         );
       } else {
-        await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/posts`,
-          formData
-        );
+        await axios.post("http://localhost:5000/api/posts", data);
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-      setOpen(false);
+      setFormData({
+        title: "",
+        seo_description: "",
+        seo_keywords: "",
+        content: "",
+        thumbnail: "",
+      });
       setEditingPost(null);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/api/posts/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-    },
-  });
-
-  const onSubmit = (data: any) => {
-    const formData = new FormData();
-    formData.append("title", data.title);
-    formData.append("seo_description", data.seo_description);
-    formData.append("seo_keywords", data.seo_keywords);
-    formData.append("content", data.content);
-    if (data.thumbnail[0]) formData.append("thumbnail", data.thumbnail[0]);
-    if (editingPost)
-      formData.append("oldImagePath", editingPost.thumbnail || "");
-    mutation.mutate(formData);
+      setOpen(false);
+      // Cập nhật lại danh sách bài viết
+      const response = await axios.get("http://localhost:5000/api/posts");
+      setPosts(response.data);
+    } catch (err) {
+      console.error("Lỗi xử lý bài viết:", err);
+    }
   };
 
-  const handleEdit = (post: Post) => {
-    setEditingPost(post);
-    setValue("title", post.title);
-    setValue("seo_description", post.seo_description);
-    setValue("seo_keywords", post.seo_keywords);
-    setValue("content", post.content);
-    setOpen(true);
-    editor?.commands.setContent(post.content || "");
-  };
-
-  const handleImageUpload = async () => {
+  const handleImageInsert = () => {
     const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
+    input.setAttribute("type", "file");
+    input.setAttribute("accept", "image/*");
+    input.click();
+
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -126,64 +94,95 @@ export default function PostsPage() {
       const formData = new FormData();
       formData.append("image", file);
 
-      const res = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/upload`,
-        formData
-      );
-      const url = res.data.url;
-      editor?.commands.setImage({ src: url });
+      try {
+        const res = await axios.post(
+          "http://localhost:5000/api/uploads/description-image",
+          formData
+        );
+        const imageUrl = res.data.url;
+        const quill = (
+          document.querySelector(".ql-editor")?.parentElement as any
+        )?.__quill;
+        const range = quill?.getSelection();
+        if (range) {
+          quill?.insertEmbed(range.index, "image", imageUrl);
+        }
+      } catch (err) {
+        console.error("Lỗi upload ảnh mô tả:", err);
+      }
     };
-    input.click();
   };
 
-  const columns: ColumnDef<Post>[] = [
+  const handleEdit = (post: any) => {
+    setEditingPost(post);
+    setFormData({
+      title: post.title,
+      seo_description: post.seo_description,
+      seo_keywords: post.seo_keywords,
+      content: post.content,
+      thumbnail: post.thumbnail,
+    });
+    setOpen(true);
+  };
+
+  const handleDelete = async (postId: string) => {
+    try {
+      await axios.delete(`http://localhost:5000/api/posts/${postId}`);
+      // Cập nhật lại danh sách bài viết sau khi xóa
+      const response = await axios.get("http://localhost:5000/api/posts");
+      setPosts(response.data);
+    } catch (err) {
+      console.error("Lỗi xóa bài viết:", err);
+    }
+  };
+
+  // Cấu hình bảng với react-table
+  // columns định nghĩa theo ColumnDef<any>
+  const columns: ColumnDef<any>[] = [
     {
-      header: "ID",
-      accessorKey: "id",
-    },
-    {
-      header: "Tiêu đề",
       accessorKey: "title",
+      header: "Tiêu đề",
     },
     {
-      header: "Thumbnail",
-      cell: ({ row }) =>
-        row.original.thumbnail ? (
-          <Image
-            src={`http://localhost:5000${row.original.thumbnail}`}
-            alt="thumb"
-            width={100}
-            height={60}
-          />
-        ) : (
-          <span>Không có</span>
-        ),
+      accessorKey: "seo_description",
+      header: "Mô tả SEO",
     },
     {
-      header: "Thao tác",
+      accessorKey: "seo_keywords",
+      header: "Từ khoá SEO",
+    },
+    {
+      id: "actions",
+      header: "Hành động",
       cell: ({ row }) => (
         <div className="flex gap-2">
           <Button onClick={() => handleEdit(row.original)}>Sửa</Button>
-          <Button
-            variant="destructive"
-            onClick={() => deleteMutation.mutate(row.original.id)}
-          >
-            Xoá
-          </Button>
+          <Button onClick={() => handleDelete(row.original.id)}>Xóa</Button>
         </div>
       ),
     },
   ];
 
+  const table = useReactTable({
+    data: posts,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Quản lý bài viết</h1>
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold">Quản lý bài viết</h2>
         <Button
           onClick={() => {
-            reset();
             setEditingPost(null);
-            editor?.commands.clearContent();
+            setFormData({
+              title: "",
+              seo_description: "",
+              seo_keywords: "",
+              content: "",
+              thumbnail: "",
+            });
             setOpen(true);
           }}
         >
@@ -191,66 +190,125 @@ export default function PostsPage() {
         </Button>
       </div>
 
-      <DataTable columns={columns} data={posts} />
+      <div className="overflow-x-auto">
+        <table className="min-w-full table-auto">
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th key={header.id} className="px-4 py-2 text-left">
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="px-4 py-2">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingPost ? "Sửa bài viết" : "Thêm bài viết"}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Tiêu đề</label>
-                <Input {...register("title")} placeholder="Tiêu đề" required />
-              </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Tiêu đề</label>
+              <Input
+                type="text"
+                value={formData.title}
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+                className="w-full"
+                placeholder="Nhập tiêu đề bài viết"
+              />
+            </div>
 
-              <div>
-                <label className="text-sm font-medium">Mô tả SEO</label>
-                <Textarea
-                  {...register("seo_description")}
-                  placeholder="Mô tả SEO"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Mô tả SEO
+              </label>
+              <Textarea
+                value={formData.seo_description}
+                onChange={(e) =>
+                  setFormData({ ...formData, seo_description: e.target.value })
+                }
+                className="w-full"
+                placeholder="Nhập mô tả SEO"
+              />
+            </div>
 
-              <div>
-                <label className="text-sm font-medium">Từ khoá SEO</label>
-                <Input
-                  {...register("seo_keywords")}
-                  placeholder="Từ khoá SEO"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Từ khoá SEO
+              </label>
+              <Textarea
+                value={formData.seo_keywords}
+                onChange={(e) =>
+                  setFormData({ ...formData, seo_keywords: e.target.value })
+                }
+                className="w-full"
+                placeholder="Nhập từ khoá SEO"
+              />
+            </div>
 
-              <div>
-                <label className="text-sm font-medium">Ảnh đại diện</label>
-                <Input type="file" {...register("thumbnail")} />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Nội dung</label>
+              <QuillWrapper
+                value={formData.content}
+                onChange={(html) =>
+                  setFormData((prev) => ({ ...prev, content: html }))
+                }
+                onImageUpload={handleImageInsert}
+              />
+            </div>
 
-              <div className="border rounded p-2 space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-sm font-medium">Nội dung</label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleImageUpload}
-                  >
-                    Chèn ảnh
-                  </Button>
-                </div>
-                {editor && <Toolbar editor={editor} />}
-                <EditorContent
-                  editor={editor}
-                  className="min-h-[200px] border rounded p-2"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Ảnh đại diện
+              </label>
+              <input
+                type="file"
+                onChange={(e) => {
+                  if (e.target.files) {
+                    setFormData({
+                      ...formData,
+                      thumbnail: URL.createObjectURL(e.target.files[0]),
+                    });
+                  }
+                }}
+                className="w-full"
+              />
+            </div>
 
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? "Đang lưu..." : "Lưu"}
+            <div className="flex justify-end gap-2">
+              <Button onClick={handleAddOrUpdate}>
+                {editingPost ? "Lưu" : "Thêm"}
               </Button>
-            </form>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Hủy
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

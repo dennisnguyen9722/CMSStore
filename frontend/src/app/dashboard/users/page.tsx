@@ -1,309 +1,275 @@
 "use client";
 
-import {
-  ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
-import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUserRole, isAuthenticated } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import axios from "axios";
+import Image from "next/image";
+
+// ================= TYPES =================
 
 interface User {
   id: number;
   name: string;
   email: string;
   role: string;
+  avatar?: string;
 }
+
+type UserFormData = {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  avatar: File | null;
+};
+
+// =============== COMPONENT ===============
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
-  const [role, setRole] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [newUser, setNewUser] = useState({
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [formData, setFormData] = useState<UserFormData>({
     name: "",
     email: "",
     password: "",
     role: "staff",
+    avatar: null,
   });
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const router = useRouter();
+  const [isAdmin, setIsAdmin] = useState(false); // trạng thái quyền admin
 
+  // Kiểm tra quyền admin khi người dùng đăng nhập
   useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/");
-    } else {
-      setRole(getUserRole());
-      setReady(true);
-    }
+    const checkAdminRole = () => {
+      const token = localStorage.getItem("accessToken");
+      if (token) {
+        const decodedToken = JSON.parse(atob(token.split('.')[1])); // giải mã token
+        if (decodedToken.role === "admin") {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
+      }
+    };
+    checkAdminRole();
   }, []);
 
   const fetchUsers = async () => {
     try {
       const token = localStorage.getItem("accessToken");
-      const res = await axios.get("http://localhost:5000/api/users", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/users`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
       setUsers(res.data);
-    } catch (err) {
-      console.error("Lỗi fetch users:", err);
+    } catch (error) {
+      console.error("Lỗi fetch users:", error);
     }
   };
 
   useEffect(() => {
-    if (ready) {
-      fetchUsers();
-    }
-  }, [ready]);
+    fetchUsers();
+  }, []);
 
-  const handleAddUser = async () => {
-    try {
-      const token = localStorage.getItem("accessToken");
-      await axios.post("http://localhost:5000/api/users", newUser, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setModalOpen(false);
-      setNewUser({ name: "", email: "", password: "", role: "staff" });
-      fetchUsers();
-    } catch (err) {
-      console.error("Lỗi thêm người dùng:", err);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFormData({ ...formData, avatar: e.target.files[0] });
     }
   };
 
-  const handleUpdateUser = async () => {
-    if (!editingUser) return;
-    try {
-      const token = localStorage.getItem("accessToken");
-      await axios.put(
-        `http://localhost:5000/api/users/${editingUser.id}`,
-        editingUser,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+  const handleSubmit = async () => {
+    const data = new FormData();
+    const token = localStorage.getItem("accessToken");
+    Object.entries(formData).forEach(([key, value]) => {
+      if (value) {
+        if (key === "avatar" && value instanceof File) {
+          data.append("avatar", value);
+        } else {
+          data.append(key, value as string);
         }
-      );
-      setEditModalOpen(false);
-      setEditingUser(null);
-      fetchUsers();
-    } catch (err) {
-      console.error("Lỗi sửa người dùng:", err);
-    }
-  };
+      }
+    });
 
-  const handleDeleteUser = async (id: number) => {
-    const confirm = window.confirm("Bạn có chắc muốn xoá người dùng này?");
-    if (!confirm) return;
     try {
-      const token = localStorage.getItem("accessToken");
-      await axios.delete(`http://localhost:5000/api/users/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (editingUser) {
+        await axios.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/users/${editingUser.id}`,
+          data,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      } else {
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/users`, data, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
       fetchUsers();
-    } catch (err) {
-      console.error("Lỗi xoá người dùng:", err);
+      setModalOpen(false);
+      setEditingUser(null);
+      setFormData({
+        name: "",
+        email: "",
+        password: "",
+        role: "staff",
+        avatar: null,
+      });
+    } catch (error) {
+      console.error("Lỗi submit user:", error);
     }
   };
 
-  const columns: ColumnDef<User>[] = useMemo(
-    () => [
-      { header: "ID", accessorKey: "id" },
-      { header: "Tên", accessorKey: "name" },
-      { header: "Email", accessorKey: "email" },
-      { header: "Quyền", accessorKey: "role" },
-      {
-        header: "Thao tác",
-        cell: ({ row }) => {
-          const user = row.original;
-          return (
-            <div className="flex gap-2">
-              <Button
-                onClick={() => {
-                  setEditingUser(user);
-                  setEditModalOpen(true);
-                }}
-                size="sm"
-              >
-                Sửa
-              </Button>
-              <Button
-                onClick={() => handleDeleteUser(user.id)}
-                variant="destructive"
-                size="sm"
-              >
-                Xoá
-              </Button>
-            </div>
-          );
-        },
-      },
-    ],
-    []
-  );
-
-  const table = useReactTable({
-    data: users,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
-  if (!ready || role === null) return <div>Đang tải...</div>;
+  const handleEdit = (user: User) => {
+    setEditingUser(user);
+    setFormData({
+      name: user.name,
+      email: user.email,
+      password: "",
+      role: user.role,
+      avatar: null,
+    });
+    setModalOpen(true);
+  };
 
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">Quản lý người dùng</h2>
-        {role === "admin" && (
-          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-            <DialogTrigger asChild>
-              <Button>Thêm người dùng</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Thêm người dùng</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-2">
-                <div>
-                  <label className="text-sm font-medium">Tên người dùng</label>
-                  <Input
-                    placeholder="Tên người dùng"
-                    value={newUser.name}
-                    onChange={(e) =>
-                      setNewUser({ ...newUser, name: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Email</label>
-                  <Input
-                    placeholder="Email"
-                    value={newUser.email}
-                    onChange={(e) =>
-                      setNewUser({ ...newUser, email: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Mật khẩu</label>
-                  <Input
-                    type="password"
-                    placeholder="Mật khẩu"
-                    value={newUser.password}
-                    onChange={(e) =>
-                      setNewUser({ ...newUser, password: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Chức vụ</label>
-                  <select
-                    value={newUser.role}
-                    onChange={(e) =>
-                      setNewUser({ ...newUser, role: e.target.value })
-                    }
-                    className="p-2 border rounded w-full"
-                  >
-                    <option value="staff">Staff</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <Button onClick={handleAddUser} className="mt-4 w-full">
-                  Thêm
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+        {isAdmin && (
+          <Button
+            onClick={() => {
+              setEditingUser(null);
+              setFormData({
+                name: "",
+                email: "",
+                password: "",
+                role: "staff",
+                avatar: null,
+              });
+              setModalOpen(true);
+            }}
+          >
+            Thêm người dùng
+          </Button>
         )}
       </div>
 
-      <div className="border rounded-md">
-        <table className="w-full">
-          <thead className="bg-gray-100">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="text-left p-2">
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext()
-                    )}
-                  </th>
-                ))}
-              </tr>
+      <div className="rounded border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Avatar</TableHead>
+              <TableHead>Tên</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Chức vụ</TableHead>
+              <TableHead>Hành động</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>
+                  {user.avatar && (
+                    <Image
+                      src={`http://localhost:5000${user.avatar}`}
+                      alt="avatar"
+                      width={40}
+                      height={40}
+                      className="rounded-full"
+                    />
+                  )}
+                </TableCell>
+                <TableCell>{user.name}</TableCell>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.role}</TableCell>
+                <TableCell>
+                  {isAdmin && (
+                    <Button size="sm" onClick={() => handleEdit(user)}>
+                      Sửa
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
             ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-t">
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="p-2">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
-      {role === "admin" && (
-        <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Sửa người dùng</DialogTitle>
-            </DialogHeader>
-            {editingUser && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-sm font-medium">Tên người dùng</label>
-                  <Input
-                    value={editingUser.name}
-                    onChange={(e) =>
-                      setEditingUser({ ...editingUser, name: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Email</label>
-                  <Input
-                    value={editingUser.email}
-                    onChange={(e) =>
-                      setEditingUser({ ...editingUser, email: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Chức vụ</label>
-                  <select
-                    value={editingUser.role}
-                    onChange={(e) =>
-                      setEditingUser({ ...editingUser, role: e.target.value })
-                    }
-                    className="p-2 border rounded w-full"
-                  >
-                    <option value="staff">Staff</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <Button onClick={handleUpdateUser} className="mt-4 w-full">
-                  Lưu thay đổi
-                </Button>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-      )}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-xl" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+          <DialogHeader>
+            <DialogTitle>
+              {editingUser ? "Sửa người dùng" : "Thêm người dùng"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <Input
+            placeholder="Tên người dùng"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="mb-2"
+          />
+          <Input
+            placeholder="Email"
+            value={formData.email}
+            onChange={(e) =>
+              setFormData({ ...formData, email: e.target.value })
+            }
+            className="mb-2"
+          />
+          <Input
+            type="password"
+            placeholder="Mật khẩu"
+            value={formData.password}
+            onChange={(e) =>
+              setFormData({ ...formData, password: e.target.value })
+            }
+            className="mb-2"
+          />
+          <select
+            value={formData.role}
+            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            className="w-full p-2 border rounded mb-2"
+          >
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+          <Input type="file" onChange={handleFileChange} className="mb-4" />
+
+          <div className="flex justify-end gap-2">
+            <Button onClick={handleSubmit}>
+              {editingUser ? "Lưu" : "Thêm"}
+            </Button>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>
+              Hủy
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

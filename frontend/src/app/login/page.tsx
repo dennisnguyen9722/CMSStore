@@ -17,14 +17,19 @@ export default function LoginPage() {
         email,
         password,
       });
-      // Lưu token vào localStorage
-      localStorage.setItem("accessToken", res.data.token);  // Lưu token vào 'accessToken'
-      router.push("/dashboard");
+      console.log(res.data);  // Kiểm tra xem có dữ liệu trả về không
+      // Đảm bảo rằng response chứa token
+      if (res.data && res.data.accessToken) {
+        localStorage.setItem("accessToken", res.data.accessToken);  // Lưu token vào 'accessToken'
+        router.push("/dashboard");
+      } else {
+        alert("Không có token trong phản hồi từ server");
+      }
     } catch (err: any) {
       alert("Đăng nhập thất bại");
     }
   };
-
+  
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md space-y-4 p-8 rounded-xl shadow-xl bg-white">

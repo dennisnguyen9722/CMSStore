@@ -14,6 +14,7 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
+  ShoppingBag,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -38,6 +39,7 @@ export default function Sidebar() {
     { label: "Quản lý danh mục", href: "/dashboard/categories", icon: <List size={20} /> },
     { label: "Quản lý sản phẩm", href: "/dashboard/products", icon: <Package size={20} /> },
     { label: "Quản lý bài viết", href: "/dashboard/posts", icon: <Newspaper size={20} /> },
+    { label: "Quản lý đơn hàng", href: "/dashboard/orders", icon: <ShoppingBag size={20} /> },
   ];
 
   const renderSidebarContent = () => (

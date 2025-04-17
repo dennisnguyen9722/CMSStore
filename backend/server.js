@@ -11,6 +11,9 @@ const productRoutes = require('./routes/productRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const sliderRoutes = require('./routes/sliderRoutes');
 const postRoutes = require("./routes/postRoutes");
+const cartRoutes = require('./routes/cartRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const paymentRoutes = require('./routes/payment');
 
 dotenv.config();
 
@@ -26,6 +29,9 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/sliders', sliderRoutes);
 app.use("/api/posts", postRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/payment', paymentRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

@@ -18,7 +18,7 @@ import {
   flexRender,
   ColumnDef,
 } from "@tanstack/react-table"; // Import thêm Column, Row từ react-table
-import QuillWrapper from "@/app/dashboard/products/QuillWrapper"; // Đảm bảo đường dẫn đúng
+import QuillWrapper from "@/app/(admin)/dashboard/products/QuillWrapper"; // Đảm bảo đường dẫn đúng
 
 export default function PostsPage() {
   const [open, setOpen] = useState(false);

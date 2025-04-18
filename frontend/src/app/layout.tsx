@@ -28,7 +28,6 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <QueryProvider>
-          {/* Thêm ToastProvider để bao bọc toàn bộ ứng dụng */}
           <ToastProvider>
             {children}
           </ToastProvider>

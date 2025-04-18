@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import QuillWrapper from "@/app/dashboard/products/QuillWrapper";
+import QuillWrapper from "@/app/(admin)/dashboard/products/QuillWrapper";
 
 interface Product {
   id: number;

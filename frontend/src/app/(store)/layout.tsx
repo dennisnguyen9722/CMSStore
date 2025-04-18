@@ -1,17 +1,23 @@
-// layout.tsx (store)
-export default function StoreLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+// app/(store)/layout.tsx
+export default function StoreLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <header className="p-4 shadow">
-        <h1 className="text-xl font-bold">CMSStore</h1>
+      {/* Header */}
+      <header className="bg-gray-800 text-white p-4">
+        <h1 className="text-2xl font-bold">CMSStore</h1>
+        <nav className="mt-2">
+          <a href="/" className="mr-4 text-sm hover:underline">Trang chủ</a>
+          <a href="/products" className="mr-4 text-sm hover:underline">Sản phẩm</a>
+          <a href="/cart" className="text-sm hover:underline">Giỏ hàng</a>
+        </nav>
       </header>
-      <main className="min-h-screen p-4">{children}</main>
-      <footer className="p-4 text-center text-sm text-gray-500">
-        © 2025 CMSStore. All rights reserved.
+
+      {/* Main content */}
+      <main className="min-h-screen p-6">{children}</main>
+
+      {/* Footer */}
+      <footer className="bg-gray-800 text-white text-center p-4">
+        <p>© 2025 CMSStore. All rights reserved.</p>
       </footer>
     </div>
   );

@@ -5,7 +5,6 @@ import axios from "axios";
 import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import "react-quill/dist/quill.snow.css";
-import { useQuill } from "react-quilljs";
 import {
   Dialog,
   DialogContent,
@@ -22,48 +21,42 @@ import {
 } from "@/components/ui/table";
 import QuillWrapper from "@/app/dashboard/products/QuillWrapper";
 
+interface Product {
+  id: number;
+  name: string;
+  price: number;
+  stock: number;
+  description: string;
+  category_id: number;
+  images: string[];
+  is_featured: number;
+}
+
+interface Category {
+  id: number;
+  name: string;
+}
+
 export default function ProductsPage() {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     price: 0,
+    stock: 1,
     description: "",
     category_id: 1,
     images: [] as File[],
+    is_featured: false,
   });
   const [keptOldImages, setKeptOldImages] = useState<string[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-
-  const ReactQuill = dynamic(() => import("react-quill"), { ssr: false });
-  const { quill, quillRef } = useQuill({
-    modules: {
-      toolbar: {
-        container: [
-          [{ header: [1, 2, false] }],
-          ["bold", "italic", "underline"],
-          [{ list: "ordered" }, { list: "bullet" }],
-          ["link", "image"],
-          ["clean"],
-        ],
-        handlers: {
-          image: () => handleImageInsert(),
-        },
-      },
-    },
-    theme: "snow",
-  });
 
   useEffect(() => {
-    if (quill) {
-      quill.clipboard.dangerouslyPasteHTML(formData.description || "");
-      quill.on("text-change", () => {
-        const html = quill.root.innerHTML;
-        setFormData((prev) => ({ ...prev, description: html }));
-      });
-    }
-  }, [quill]);
+    fetchProducts();
+    fetchCategories();
+  }, []);
 
   const fetchProducts = async () => {
     const res = await axios.get("http://localhost:5000/api/products");
@@ -75,22 +68,19 @@ export default function ProductsPage() {
     setCategories(res.data);
   };
 
-  useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, []);
-
   const handleAddOrUpdate = async () => {
     const data = new FormData();
     data.append("name", formData.name);
     data.append("price", formData.price.toString());
+    data.append("stock", formData.stock.toString());
     data.append("description", formData.description);
     data.append("category_id", formData.category_id.toString());
+    data.append("is_featured", formData.is_featured ? "1" : "0");
+
     formData.images.forEach((file) => {
       data.append("images", file);
     });
 
-    // thêm danh sách ảnh giữ lại khi update
     if (editingProduct) {
       data.append("keptOldImages", JSON.stringify(keptOldImages));
     }
@@ -108,9 +98,11 @@ export default function ProductsPage() {
       setFormData({
         name: "",
         price: 0,
+        stock: 1,
         description: "",
         category_id: 1,
         images: [],
+        is_featured: false,
       });
       setKeptOldImages([]);
       setEditingProduct(null);
@@ -129,7 +121,10 @@ export default function ProductsPage() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFormData((prev) => ({ ...prev, images: Array.from(e.target.files!) }));
+      setFormData((prev) => ({
+        ...prev,
+        images: Array.from(e.target.files!),
+      }));
     }
   };
 
@@ -163,14 +158,16 @@ export default function ProductsPage() {
     };
   };
 
-  const handleEdit = (product: any) => {
+  const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setFormData({
       name: product.name,
       price: product.price,
+      stock: product.stock,
       description: product.description,
       category_id: product.category_id,
       images: [],
+      is_featured: product.is_featured === 1,
     });
     setKeptOldImages(product.images || []);
     setModalOpen(true);
@@ -178,6 +175,30 @@ export default function ProductsPage() {
 
   const removeOldImage = (image: string) => {
     setKeptOldImages((prev) => prev.filter((img) => img !== image));
+  };
+
+  const handleToggleFeatured = async (
+    productId: number,
+    currentStatus: boolean
+  ) => {
+    try {
+      // Chỉ gửi yêu cầu PUT với trường 'is_featured' thay đổi
+      await axios.put(
+        `http://localhost:5000/api/products/${productId}/featured`,
+        {
+          is_featured: currentStatus ? 0 : 1,
+        }
+      );
+
+      // Cập nhật lại danh sách sản phẩm sau khi thay đổi
+      fetchProducts();
+
+      // Thông báo cho người dùng
+      alert("Trạng thái sản phẩm đã được cập nhật thành công!");
+    } catch (err) {
+      console.error("Lỗi cập nhật trạng thái sản phẩm:", err);
+      alert("Có lỗi xảy ra khi cập nhật trạng thái sản phẩm!");
+    }
   };
 
   return (
@@ -190,9 +211,11 @@ export default function ProductsPage() {
             setFormData({
               name: "",
               price: 0,
+              stock: 0,
               description: "",
               category_id: 1,
               images: [],
+              is_featured: false,
             });
             setKeptOldImages([]);
             setModalOpen(true);
@@ -211,6 +234,7 @@ export default function ProductsPage() {
               <TableHead>Giá</TableHead>
               <TableHead>Mô tả</TableHead>
               <TableHead>Ảnh</TableHead>
+              <TableHead>Tồn kho</TableHead>
               <TableHead>Thao tác</TableHead>
             </TableRow>
           </TableHeader>
@@ -242,6 +266,7 @@ export default function ProductsPage() {
                     <span className="text-sm text-gray-500">Chưa có ảnh</span>
                   )}
                 </TableCell>
+                <TableCell>{product.stock}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
                     <Button onClick={() => handleEdit(product)}>Sửa</Button>
@@ -252,6 +277,22 @@ export default function ProductsPage() {
                       Xoá
                     </Button>
                   </div>
+                </TableCell>
+                <TableCell>
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={product.is_featured === 1}
+                      onChange={() =>
+                        handleToggleFeatured(
+                          product.id,
+                          product.is_featured === 1
+                        )
+                      }
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Nổi bật</span>
+                  </label>
                 </TableCell>
               </TableRow>
             ))}
@@ -299,7 +340,9 @@ export default function ProductsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Mô tả sản phẩm</label>
+              <label className="block text-sm font-medium mb-1">
+                Mô tả sản phẩm
+              </label>
               <QuillWrapper
                 value={formData.description}
                 onChange={(html) =>
@@ -335,6 +378,35 @@ export default function ProductsPage() {
                 multiple
                 onChange={handleFileChange}
                 className="w-full border rounded px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={formData.is_featured}
+                  onChange={(e) =>
+                    setFormData({ ...formData, is_featured: e.target.checked })
+                  }
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Sản phẩm nổi bật</span>
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium mb-1">
+                Tồn kho
+              </label>
+              <input
+                type="number"
+                value={formData.stock}
+                onChange={(e) =>
+                  setFormData({ ...formData, stock: +e.target.value })
+                }
+                className="w-full border rounded px-3 py-2"
+                placeholder="Nhập số lượng tồn kho"
               />
             </div>
 

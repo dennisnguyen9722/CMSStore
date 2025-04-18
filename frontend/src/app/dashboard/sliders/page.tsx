@@ -156,7 +156,7 @@ export default function SlidersPage() {
               rel="noopener noreferrer"
             >
               <img
-                src={`http://localhost:5000${img.image_path}`}
+                src={`http://localhost:5000/uploads/sliders/${img.image_path}`}
                 className="h-12 w-auto rounded"
                 alt={`slider-${row.original.id}-${i}`}
               />
@@ -268,7 +268,7 @@ export default function SlidersPage() {
           {oldImages.map((img, i) => (
             <div key={i} className="flex items-center gap-2 mb-2">
               <img
-                src={`http://localhost:5000${img.image_path}`}
+                src={`http://localhost:5000/uploads/sliders/${img.image_path}`}
                 className="h-12 w-auto rounded"
               />
               <input

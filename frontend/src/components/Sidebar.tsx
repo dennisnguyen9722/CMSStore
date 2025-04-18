@@ -34,24 +34,56 @@ export default function Sidebar() {
 
   const menu = [
     { label: "Dashboard", href: "/", icon: <LayoutDashboard size={20} /> },
-    { label: "Quản lý slider", href: "/dashboard/sliders", icon: <ImageIcon size={20} /> },
-    { label: "Quản lý người dùng", href: "/dashboard/users", icon: <Users size={20} /> },
-    { label: "Quản lý danh mục", href: "/dashboard/categories", icon: <List size={20} /> },
-    { label: "Quản lý sản phẩm", href: "/dashboard/products", icon: <Package size={20} /> },
-    { label: "Quản lý bài viết", href: "/dashboard/posts", icon: <Newspaper size={20} /> },
-    { label: "Quản lý đơn hàng", href: "/dashboard/orders", icon: <ShoppingBag size={20} /> },
+    {
+      label: "Quản lý slider",
+      href: "/dashboard/sliders",
+      icon: <ImageIcon size={20} />,
+    },
+    {
+      label: "Quản lý người dùng",
+      href: "/dashboard/users",
+      icon: <Users size={20} />,
+    },
+    {
+      label: "Quản lý danh mục",
+      href: "/dashboard/categories",
+      icon: <List size={20} />,
+    },
+    {
+      label: "Quản lý sản phẩm",
+      href: "/dashboard/products",
+      icon: <Package size={20} />,
+    },
+    {
+      label: "Quản lý bài viết",
+      href: "/dashboard/posts",
+      icon: <Newspaper size={20} />,
+    },
+    {
+      label: "Quản lý đơn hàng",
+      href: "/dashboard/orders",
+      icon: <ShoppingBag size={20} />,
+    },
   ];
 
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full justify-between transition-all duration-300 ease-in-out">
       {/* Collapse toggle (desktop only) */}
       <div className="flex justify-between items-center mb-6">
-        {!isCollapsed && <h1 className="text-2xl font-bold whitespace-nowrap">CMS Dashboard</h1>}
+        {!isCollapsed && (
+          <h1 className="text-2xl font-bold whitespace-nowrap">
+            CMS Dashboard
+          </h1>
+        )}
         <button
           onClick={toggleCollapse}
           className="text-white ml-auto md:block hidden"
         >
-          {isCollapsed ? <ChevronsRight size={20} /> : <ChevronsLeft size={20} />}
+          {isCollapsed ? (
+            <ChevronsRight size={20} />
+          ) : (
+            <ChevronsLeft size={20} />
+          )}
         </button>
       </div>
 
@@ -69,7 +101,9 @@ export default function Sidebar() {
                 onClick={() => setIsMobileOpen(false)}
               >
                 {item.icon}
-                {!isCollapsed && <span className="whitespace-nowrap">{item.label}</span>}
+                {!isCollapsed && (
+                  <span className="whitespace-nowrap">{item.label}</span>
+                )}
               </Link>
             </li>
           );
@@ -105,9 +139,9 @@ export default function Sidebar() {
 
       {/* Sidebar container */}
       <aside
-        className={`fixed top-0 left-0 h-screen bg-black text-white p-4 shadow-md z-40 transition-all duration-300 ease-in-out 
-        ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} 
-        md:translate-x-0 md:relative md:flex
+        className={`md:relative bg-black text-white p-4 shadow-md transition-all duration-300 ease-in-out 
+        ${isMobileOpen ? "fixed top-0 left-0 z-40 h-screen translate-x-0" : "md:flex"}
+        ${isMobileOpen ? "" : "md:translate-x-0 md:static"}
         ${isCollapsed ? "w-20" : "w-64"}`}
       >
         {renderSidebarContent()}

@@ -1,5 +1,4 @@
 import jwt_decode from 'jwt-decode';
-import { cookies } from 'next/headers';
 
 interface DecodedToken {
   id: number;

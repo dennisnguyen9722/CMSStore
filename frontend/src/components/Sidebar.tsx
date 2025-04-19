@@ -33,7 +33,7 @@ export default function Sidebar() {
   const toggleCollapse = () => setIsCollapsed(!isCollapsed);
 
   const menu = [
-    { label: "Dashboard", href: "/", icon: <LayoutDashboard size={20} /> },
+    { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard size={20} /> },
     {
       label: "Quản lý slider",
       href: "/dashboard/sliders",

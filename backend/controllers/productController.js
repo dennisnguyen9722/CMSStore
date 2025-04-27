@@ -5,11 +5,22 @@ const path = require('path');
 // Lấy tất cả sản phẩm kèm ảnh
 const getAllProducts = async (req, res) => {
   try {
-    const [results] = await db.query(`
+    const categoryId = req.query.category_id;
+
+    let query = `
       SELECT p.*, pi.image_url
       FROM products p
       LEFT JOIN product_images pi ON p.id = pi.product_id
-    `);
+    `;
+
+    const params = [];
+
+    if (categoryId) {
+      query += ` WHERE p.category_id = ?`;
+      params.push(categoryId);
+    }
+
+    const [results] = await db.query(query, params);
 
     const products = [];
 
@@ -39,7 +50,6 @@ const getAllProducts = async (req, res) => {
   }
 };
 
-// Tạo sản phẩm mới
 // Tạo sản phẩm mới
 const createProduct = async (req, res) => {
   const { name, price, stock, category_id, description, is_featured = false } = req.body;
@@ -178,10 +188,127 @@ const updateFeaturedStatus = async (req, res) => {
   }
 };
 
+const searchProducts = async (req, res) => {
+  const query = req.query.q || "";
+  try {
+    // Truy vấn JOIN giữa bảng products và bảng product_images
+    const [rows] = await db.query(
+      `SELECT p.id, p.name, p.description, p.price, p.category_id, p.created_at, p.is_featured, p.stock, pi.image_url
+       FROM products p
+       LEFT JOIN product_images pi ON p.id = pi.product_id
+       WHERE p.name LIKE ?`,
+      [`%${query}%`]
+    );
+
+    // Tạo mảng ảnh cho mỗi sản phẩm
+    const products = rows.reduce((acc, row) => {
+      // Tìm sản phẩm đã có trong acc
+      let product = acc.find((p) => p.id === row.id);
+
+      if (!product) {
+        // Nếu chưa có, tạo mới sản phẩm và thêm ảnh
+        product = {
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          price: row.price,
+          category_id: row.category_id,
+          created_at: row.created_at,
+          is_featured: row.is_featured,
+          stock: row.stock,
+          images: row.image_url ? [row.image_url] : [], // Nếu có ảnh, thêm vào mảng images
+        };
+        acc.push(product);
+      } else {
+        // Nếu đã có, thêm ảnh vào mảng images
+        if (row.image_url && !product.images.includes(row.image_url)) {
+          product.images.push(row.image_url);
+        }
+      }
+
+      return acc;
+    }, []);
+
+    res.json(products);
+  } catch (error) {
+    console.error("Lỗi tìm kiếm sản phẩm:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+const getFilteredProducts = async (req, res) => {
+  const category_id = req.query.category_id || null;
+  const priceRange = req.query.priceRange ? String(req.query.priceRange).toLowerCase() : null;
+
+  console.log('Parsed Category ID:', category_id);
+  console.log('Parsed Price Range:', priceRange);
+
+  let query = `
+    SELECT p.*, pi.image_url
+    FROM products p
+    LEFT JOIN product_images pi ON p.id = pi.product_id
+    WHERE 1 = 1
+  `;
+  const params = [];
+
+  if (category_id) {
+    console.log('Adding category filter:', category_id);
+    query += " AND p.category_id = ?";
+    params.push(category_id);
+  }
+
+  if (priceRange) {
+    console.log('Applying price filter for:', priceRange);
+    if (priceRange === "under-1m") {
+      query += " AND CAST(p.price AS DECIMAL) <= 1000000";
+    } else if (priceRange === "1m-5m") {
+      query += " AND CAST(p.price AS DECIMAL) > 1000000 AND CAST(p.price AS DECIMAL) <= 5000000";
+    } else if (priceRange === "above-5m") {
+      query += " AND CAST(p.price AS DECIMAL) > 5000000";
+    } else {
+      console.log('Invalid priceRange value:', priceRange);
+      return res.status(400).json({ message: `Giá trị priceRange không hợp lệ: ${priceRange}` });
+    }
+  }
+
+  console.log('Final SQL Query:', query);
+  console.log('Query Params:', params);
+
+  try {
+    const [rows] = await db.query(query, params);
+    const products = [];
+    rows.forEach(row => {
+      let product = products.find(p => p.id === row.id);
+      if (!product) {
+        product = {
+          id: row.id,
+          name: row.name,
+          price: row.price,
+          stock: row.stock,
+          category_id: row.category_id,
+          description: row.description,
+          is_featured: row.is_featured,
+          images: [],
+        };
+        products.push(product);
+      }
+      if (row.image_url) {
+        product.images.push(row.image_url);
+      }
+    });
+    res.json(products);
+  } catch (error) {
+    console.error('Error in getFilteredProducts:', error);
+    res.status(500).json({ message: 'Lỗi server khi tìm sản phẩm', error: error.message });
+  }
+};
+
 module.exports = {
   getAllProducts,
+  searchProducts,
   createProduct,
   updateProduct,
   updateFeaturedStatus,
   deleteProduct,
+  getFilteredProducts
 };

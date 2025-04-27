@@ -6,7 +6,7 @@ const productController = require('../controllers/productController');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, './uploads'); // Thư mục gốc của dự án
+    cb(null, './uploads');
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -18,7 +18,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-router.get('/', productController.getAllProducts);
+// Routes
+router.get('/', productController.getFilteredProducts); // Thay từ /products/filtered thành /
+router.get('/all', productController.getAllProducts); // Thêm route riêng cho getAllProducts
+router.get('/search', productController.searchProducts);
 router.post('/', upload.array('images'), productController.createProduct);
 router.put('/:id', upload.array('images'), productController.updateProduct);
 router.put('/:id/featured', productController.updateFeaturedStatus);

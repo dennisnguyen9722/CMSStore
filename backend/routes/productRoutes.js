@@ -22,6 +22,7 @@ const upload = multer({ storage });
 router.get('/', productController.getFilteredProducts); // Thay từ /products/filtered thành /
 router.get('/all', productController.getAllProducts); // Thêm route riêng cho getAllProducts
 router.get('/search', productController.searchProducts);
+router.get('/:id', productController.getProductById);
 router.post('/', upload.array('images'), productController.createProduct);
 router.put('/:id', upload.array('images'), productController.updateProduct);
 router.put('/:id/featured', productController.updateFeaturedStatus);

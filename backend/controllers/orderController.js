@@ -1,4 +1,3 @@
-// controllers/orderController.js
 const db = require("../config/db");
 
 // Lấy danh sách tất cả đơn hàng (dành cho admin)
@@ -8,18 +7,15 @@ exports.getAllOrders = async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 10;
     const offset = (page - 1) * pageSize;
 
-    // Đếm tổng số đơn hàng
     const [countRows] = await db.query("SELECT COUNT(*) AS total FROM orders");
     const totalOrders = countRows[0].total;
     const totalPages = Math.ceil(totalOrders / pageSize);
 
-    // Lấy danh sách đơn hàng theo phân trang
     const [orders] = await db.query(
-      "SELECT * FROM orders ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      "SELECT id, user_id, full_name, total_price, address, phone, status, created_at FROM orders ORDER BY created_at DESC LIMIT ? OFFSET ?",
       [pageSize, offset]
     );
 
-    // Gắn thêm danh sách sản phẩm của từng đơn
     for (const order of orders) {
       const [items] = await db.query(
         `SELECT oi.*, p.name, p.price AS product_price
@@ -31,7 +27,6 @@ exports.getAllOrders = async (req, res) => {
       order.items = items;
     }
 
-    // Trả kết quả
     res.json({
       orders,
       totalPages,
@@ -45,17 +40,22 @@ exports.getAllOrders = async (req, res) => {
 
 // Tạo đơn hàng
 exports.createOrder = async (req, res) => {
-  const { user_id = 'guest', address, phone, items = [] } = req.body;
+  const { user_id = 'guest', full_name, address, phone, items = [], status = 'pending' } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "Giỏ hàng trống" });
+  }
+  if (!full_name || !address || !phone) {
+    return res.status(400).json({ message: "Vui lòng cung cấp họ tên, địa chỉ và số điện thoại" });
+  }
+  if (!['pending', 'paid', 'cancelled'].includes(status)) {
+    return res.status(400).json({ message: "Trạng thái đơn hàng không hợp lệ" });
   }
 
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
-    // Tính tổng giá
     let total_price = 0;
 
     for (const item of items) {
@@ -66,14 +66,12 @@ exports.createOrder = async (req, res) => {
       total_price += product.price * item.quantity;
     }
 
-    // Tạo đơn hàng
     const [result] = await connection.query(
-      'INSERT INTO orders (user_id, total_price, address, phone, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-      [user_id, total_price, address, phone, 'pending']
+      'INSERT INTO orders (user_id, full_name, total_price, address, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+      [user_id, full_name, total_price, address, phone, status]
     );
     const orderId = result.insertId;
 
-    // Lưu chi tiết đơn hàng (không trừ kho ở đây)
     for (const item of items) {
       const [productRows] = await connection.query('SELECT price FROM products WHERE id = ?', [item.product_id]);
       const productPrice = productRows[0].price;
@@ -82,6 +80,12 @@ exports.createOrder = async (req, res) => {
         'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
         [orderId, item.product_id, item.quantity, productPrice]
       );
+    }
+
+    // Xóa giỏ hàng nếu không phải đơn hủy
+    if (status !== 'cancelled') {
+      await connection.query('DELETE FROM carts WHERE user_id = ?', [user_id]);
+      console.log(`Cleared cart for user: ${user_id}`);
     }
 
     await connection.commit();
@@ -107,7 +111,6 @@ exports.updateOrderStatus = async (req, res) => {
   }
 
   try {
-    // Lấy trạng thái hiện tại của đơn hàng
     const [rows] = await db.query("SELECT * FROM orders WHERE id = ?", [id]);
     if (rows.length === 0) {
       return res.status(404).json({ message: "Đơn hàng không tồn tại" });
@@ -116,7 +119,6 @@ exports.updateOrderStatus = async (req, res) => {
     const order = rows[0];
     const currentStatus = order.status;
 
-    // Kiểm tra luồng hợp lệ
     const validTransitions = {
       pending: ["paid", "cancelled"],
       paid: ["shipped"],
@@ -130,7 +132,6 @@ exports.updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Nếu chuyển sang shipped => trừ kho
     if (newStatus === "shipped") {
       const [items] = await db.query(
         "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
@@ -154,7 +155,6 @@ exports.updateOrderStatus = async (req, res) => {
       }
     }
 
-    // Cập nhật trạng thái
     await db.query("UPDATE orders SET status = ? WHERE id = ?", [newStatus, id]);
 
     res.json({
@@ -171,7 +171,7 @@ exports.updateOrderStatus = async (req, res) => {
   }
 };
 
-// Xoá đơn hàng (cẩn thận khi dùng)
+// Xóa đơn hàng
 exports.deleteOrder = async (req, res) => {
   const { id } = req.params;
 
@@ -179,47 +179,45 @@ exports.deleteOrder = async (req, res) => {
     await db.query("DELETE FROM order_items WHERE order_id = ?", [id]);
     await db.query("DELETE FROM orders WHERE id = ?", [id]);
 
-    res.json({ message: "Đã xoá đơn hàng" });
+    res.json({ message: "Đã xóa đơn hàng" });
   } catch (err) {
-    console.error("Lỗi xoá đơn:", err);
+    console.error("Lỗi xóa đơn:", err);
     res.status(500).json({ message: "Lỗi server" });
   }
 };
 
+// Xuất kho đơn hàng
 exports.shipOrder = async (req, res) => {
   const { id } = req.params;
 
   try {
-    // Kiểm tra đơn hàng có tồn tại và trạng thái là "paid"
-    const [order] = await db.query("SELECT * FROM orders WHERE id = ?", [id]);
-
-    if (!order) {
+    const [rows] = await db.query("SELECT * FROM orders WHERE id = ?", [id]);
+    if (rows.length === 0) {
       return res.status(404).json({ message: "Đơn hàng không tồn tại" });
     }
 
+    const order = rows[0];
     if (order.status !== 'paid') {
       return res.status(400).json({ message: "Đơn hàng chưa thanh toán" });
     }
 
-    // Duyệt qua các sản phẩm trong đơn hàng và trừ tồn kho
-    for (const item of order.items) {
-      const { product_id, quantity } = item;
+    const [items] = await db.query(
+      "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
+      [id]
+    );
 
-      // Cập nhật số lượng tồn kho
-      const [product] = await db.query("SELECT stock FROM products WHERE id = ?", [product_id]);
-
-      if (product.stock < quantity) {
-        return res.status(400).json({ message: `Không đủ hàng cho sản phẩm ID ${product_id}` });
+    for (const item of items) {
+      const [product] = await db.query("SELECT stock FROM products WHERE id = ?", [item.product_id]);
+      if (product.length === 0 || product[0].stock < item.quantity) {
+        return res.status(400).json({ message: `Không đủ hàng cho sản phẩm ID ${item.product_id}` });
       }
 
-      // Trừ tồn kho
       await db.query(
         "UPDATE products SET stock = stock - ? WHERE id = ?",
-        [quantity, product_id]
+        [item.quantity, item.product_id]
       );
     }
 
-    // Cập nhật trạng thái đơn hàng thành "shipped"
     await db.query("UPDATE orders SET status = ? WHERE id = ?", ['shipped', id]);
 
     res.json({ message: "Đơn hàng đã được xuất kho thành công" });
@@ -229,5 +227,47 @@ exports.shipOrder = async (req, res) => {
   }
 };
 
+// Lấy danh sách đơn hàng của người dùng
+exports.getUserOrders = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+    const offset = (page - 1) * pageSize;
 
+    const [countRows] = await db.query(
+      "SELECT COUNT(*) AS total FROM orders WHERE user_id = ?",
+      [userId]
+    );
+    const totalOrders = countRows[0].total;
+    const totalPages = Math.ceil(totalOrders / pageSize);
 
+    const [orders] = await db.query(
+      "SELECT id, user_id, full_name, total_price, address, phone, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      [userId, pageSize, offset]
+    );
+
+    for (const order of orders) {
+      const [items] = await db.query(
+        `SELECT oi.*, p.name, p.price AS product_price, pi.image_url AS image
+         FROM order_items oi
+         JOIN products p ON oi.product_id = p.id
+         LEFT JOIN product_images pi ON p.id = pi.product_id
+         WHERE oi.order_id = ?
+         GROUP BY oi.id, p.id, pi.id
+         LIMIT 1`,
+        [order.id]
+      );
+      order.items = items;
+    }
+
+    res.json({
+      orders,
+      totalPages,
+      currentPage: page,
+    });
+  } catch (err) {
+    console.error("Lỗi lấy danh sách đơn hàng của người dùng:", err.stack);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+};

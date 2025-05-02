@@ -240,9 +240,6 @@ const getFilteredProducts = async (req, res) => {
   const category_id = req.query.category_id || null;
   const priceRange = req.query.priceRange ? String(req.query.priceRange).toLowerCase() : null;
 
-  console.log('Parsed Category ID:', category_id);
-  console.log('Parsed Price Range:', priceRange);
-
   let query = `
     SELECT p.*, pi.image_url
     FROM products p
@@ -252,13 +249,11 @@ const getFilteredProducts = async (req, res) => {
   const params = [];
 
   if (category_id) {
-    console.log('Adding category filter:', category_id);
     query += " AND p.category_id = ?";
     params.push(category_id);
   }
 
   if (priceRange) {
-    console.log('Applying price filter for:', priceRange);
     if (priceRange === "under-1m") {
       query += " AND CAST(p.price AS DECIMAL) <= 1000000";
     } else if (priceRange === "1m-5m") {
@@ -270,9 +265,6 @@ const getFilteredProducts = async (req, res) => {
       return res.status(400).json({ message: `Giá trị priceRange không hợp lệ: ${priceRange}` });
     }
   }
-
-  console.log('Final SQL Query:', query);
-  console.log('Query Params:', params);
 
   try {
     const [rows] = await db.query(query, params);
@@ -303,6 +295,54 @@ const getFilteredProducts = async (req, res) => {
   }
 };
 
+const getProductById = async (req, res) => {
+  const { id } = req.params;
+  console.log(`Fetching product with ID: ${id}`);
+
+  try {
+    const query = `
+      SELECT p.*, pi.image_url, pc.color_name, pc.color_code
+      FROM products p
+      LEFT JOIN product_images pi ON p.id = pi.product_id
+      LEFT JOIN product_colors pc ON p.id = pc.product_id
+      WHERE p.id = ?
+    `;
+    const [rows] = await db.query(query, [id]);
+
+    if (rows.length === 0) {
+      console.log(`Product not found: ${id}`);
+      return res.status(404).json({ message: 'Sản phẩm không tồn tại' });
+    }
+
+    const product = {
+      id: rows[0].id,
+      name: rows[0].name,
+      price: rows[0].price,
+      stock: rows[0].stock,
+      category_id: rows[0].category_id,
+      description: rows[0].description,
+      is_featured: rows[0].is_featured,
+      images: [],
+      colors: [],
+    };
+
+    rows.forEach(row => {
+      if (row.image_url && !product.images.includes(row.image_url)) {
+        product.images.push(row.image_url);
+      }
+      if (row.color_name && !product.colors.some(c => c.name === row.color_name)) {
+        product.colors.push({ name: row.color_name, code: row.color_code });
+      }
+    });
+
+    console.log('Product fetched:', product);
+    res.json(product);
+  } catch (error) {
+    console.error('Error in getProductById:', error);
+    res.status(500).json({ message: 'Lỗi server khi lấy sản phẩm', error: error.message });
+  }
+};
+
 module.exports = {
   getAllProducts,
   searchProducts,
@@ -310,5 +350,6 @@ module.exports = {
   updateProduct,
   updateFeaturedStatus,
   deleteProduct,
+  getProductById,
   getFilteredProducts
 };

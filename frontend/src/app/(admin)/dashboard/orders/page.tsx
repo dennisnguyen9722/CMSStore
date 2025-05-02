@@ -25,7 +25,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { toast } from "react-toastify"; // Import react-toastify
+import { toast } from "react-toastify";
 
 // Định nghĩa kiểu dữ liệu
 interface OrderItem {
@@ -37,6 +37,7 @@ interface OrderItem {
 
 interface Order {
   id: number;
+  full_name: string;
   user_id: string;
   total_price: number;
   address: string;
@@ -50,10 +51,9 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
-  const pageSize = 10; // Số đơn hàng mỗi trang
+  const pageSize = 10;
 
   // Fetch orders from API
   const fetchOrders = async () => {
@@ -64,10 +64,12 @@ export default function OrdersPage() {
           pageSize: pageSize,
         },
       });
-      setOrders(res.data.orders); // Giả sử API trả về { orders: [...], totalPages: n }
+      console.log("Fetched orders:", res.data.orders); // Debug log
+      setOrders(res.data.orders);
       setTotalPages(res.data.totalPages);
     } catch (err) {
       console.error("Lỗi khi fetch đơn hàng:", err);
+      toast.error("Lỗi khi tải danh sách đơn hàng");
     }
   };
 
@@ -87,28 +89,15 @@ export default function OrdersPage() {
     newStatus: "pending" | "paid" | "cancelled" | "shipped"
   ) => {
     try {
-      // Cập nhật trạng thái đơn hàng
       await axios.put(`http://localhost:5000/api/orders/${orderId}`, {
         status: newStatus,
       });
-
-      // Hiển thị thông báo thành công
       toast.success("Cập nhật trạng thái thành công");
-
-      // Tải lại danh sách đơn hàng
       await fetchOrders();
-
-      // Cập nhật thông tin đơn hàng trong modal
-      const updated = orders.find((o) => o.id === orderId);
-      if (updated) {
-        setSelectedOrder({ ...updated, status: newStatus });
-      }
-
-      // Đóng modal sau khi cập nhật trạng thái thành công
       setSelectedOrder(null); // Đóng modal
     } catch (err) {
-      console.error("Lỗi khi cập nhật trạng thái trong modal:", err);
-      toast.error("Không thể cập nhật trạng thái.");
+      console.error("Lỗi khi cập nhật trạng thái:", err);
+      toast.error("Không thể cập nhật trạng thái");
     }
   };
 
@@ -119,7 +108,7 @@ export default function OrdersPage() {
       case "paid":
         return ["shipped"];
       default:
-        return []; // Không cho chuyển trạng thái nữa
+        return [];
     }
   }
 
@@ -136,9 +125,7 @@ export default function OrdersPage() {
             <SelectItem value="pending">Chờ thanh toán</SelectItem>
             <SelectItem value="paid">Đã thanh toán</SelectItem>
             <SelectItem value="cancelled">Đã hủy</SelectItem>
-            <SelectItem value="shipped">
-              Đã gửi cho đơn vị vận chuyển
-            </SelectItem>
+            <SelectItem value="shipped">Đã gửi cho đơn vị vận chuyển</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -159,10 +146,8 @@ export default function OrdersPage() {
           <TableBody>
             {filteredOrders.map((order, index) => (
               <TableRow key={order.id}>
-                <TableCell>
-                  {(currentPage - 1) * pageSize + index + 1}
-                </TableCell>
-                <TableCell>{order.user_id}</TableCell>
+                <TableCell>{(currentPage - 1) * pageSize + index + 1}</TableCell>
+                <TableCell>{order.full_name}</TableCell>
                 <TableCell>{order.address}</TableCell>
                 <TableCell>{order.phone}</TableCell>
                 <TableCell>
@@ -239,7 +224,7 @@ export default function OrdersPage() {
             </DialogHeader>
             <div className="max-h-[70vh] overflow-y-auto space-y-4 pr-2">
               <p>
-                <strong>Khách hàng:</strong> {selectedOrder.user_id}
+                <strong>Khách hàng:</strong> {selectedOrder.full_name}
               </p>
               <p>
                 <strong>Địa chỉ:</strong> {selectedOrder.address}
@@ -281,6 +266,44 @@ export default function OrdersPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              {/* Danh sách sản phẩm */}
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Sản phẩm trong đơn hàng</h3>
+                {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tên sản phẩm</TableHead>
+                        <TableHead>Số lượng</TableHead>
+                        <TableHead>Đơn giá</TableHead>
+                        <TableHead>Thành tiền</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedOrder.items.map((item) => (
+                        <TableRow key={item.product_id}>
+                          <TableCell>{item.name}</TableCell>
+                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell>
+                            {new Intl.NumberFormat("vi-VN", {
+                              style: "currency",
+                              currency: "VND",
+                            }).format(item.price)}
+                          </TableCell>
+                          <TableCell>
+                            {new Intl.NumberFormat("vi-VN", {
+                              style: "currency",
+                              currency: "VND",
+                            }).format(item.price * item.quantity)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-gray-500">Không có sản phẩm trong đơn hàng</p>
+                )}
               </div>
             </div>
             <DialogFooter>

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "./query-provider"; // ✅ THÊM DÒNG NÀY
-import { ToastProvider } from '@radix-ui/react-toast'; // Import ToastProvider từ radix
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,9 +29,8 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <QueryProvider>
-          <ToastProvider>
             {children}
-          </ToastProvider>
+          <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} />
         </QueryProvider>
       </body>
     </html>

@@ -30,6 +30,7 @@ interface Product {
   category_id: number;
   images: string[];
   is_featured: number;
+  colors: { name: string; code: string }[]; // Thêm colors
 }
 
 interface Category {
@@ -50,8 +51,10 @@ export default function ProductsPage() {
     category_id: 1,
     images: [] as File[],
     is_featured: false,
+    colors: [] as { name: string; code: string }[], // Thêm colors
   });
   const [keptOldImages, setKeptOldImages] = useState<string[]>([]);
+  const [newColor, setNewColor] = useState({ name: "", code: "" }); // State cho màu mới
 
   useEffect(() => {
     fetchProducts();
@@ -76,6 +79,7 @@ export default function ProductsPage() {
     data.append("description", formData.description);
     data.append("category_id", formData.category_id.toString());
     data.append("is_featured", formData.is_featured ? "1" : "0");
+    data.append("colors", JSON.stringify(formData.colors)); // Gửi colors
 
     formData.images.forEach((file) => {
       data.append("images", file);
@@ -103,6 +107,7 @@ export default function ProductsPage() {
         category_id: 1,
         images: [],
         is_featured: false,
+        colors: [],
       });
       setKeptOldImages([]);
       setEditingProduct(null);
@@ -168,6 +173,7 @@ export default function ProductsPage() {
       category_id: product.category_id,
       images: [],
       is_featured: product.is_featured === 1,
+      colors: product.colors || [], // Load colors
     });
     setKeptOldImages(product.images || []);
     setModalOpen(true);
@@ -177,23 +183,37 @@ export default function ProductsPage() {
     setKeptOldImages((prev) => prev.filter((img) => img !== image));
   };
 
+  const handleAddColor = () => {
+    if (!newColor.name || !newColor.code) {
+      alert("Vui lòng nhập cả tên màu và mã màu!");
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      colors: [...prev.colors, { name: newColor.name, code: newColor.code }],
+    }));
+    setNewColor({ name: "", code: "" }); // Reset input
+  };
+
+  const handleRemoveColor = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      colors: prev.colors.filter((_, i) => i !== index),
+    }));
+  };
+
   const handleToggleFeatured = async (
     productId: number,
     currentStatus: boolean
   ) => {
     try {
-      // Chỉ gửi yêu cầu PUT với trường 'is_featured' thay đổi
       await axios.put(
         `http://localhost:5000/api/products/${productId}/featured`,
         {
           is_featured: currentStatus ? 0 : 1,
         }
       );
-
-      // Cập nhật lại danh sách sản phẩm sau khi thay đổi
       fetchProducts();
-
-      // Thông báo cho người dùng
       alert("Trạng thái sản phẩm đã được cập nhật thành công!");
     } catch (err) {
       console.error("Lỗi cập nhật trạng thái sản phẩm:", err);
@@ -216,6 +236,7 @@ export default function ProductsPage() {
               category_id: 1,
               images: [],
               is_featured: false,
+              colors: [],
             });
             setKeptOldImages([]);
             setModalOpen(true);
@@ -235,6 +256,7 @@ export default function ProductsPage() {
               <TableHead>Mô tả</TableHead>
               <TableHead>Ảnh</TableHead>
               <TableHead>Tồn kho</TableHead>
+              <TableHead>Màu sắc</TableHead>
               <TableHead>Thao tác</TableHead>
             </TableRow>
           </TableHeader>
@@ -267,6 +289,22 @@ export default function ProductsPage() {
                   )}
                 </TableCell>
                 <TableCell>{product.stock}</TableCell>
+                <TableCell>
+                  {product.colors?.length > 0 ? (
+                    <div className="flex gap-2">
+                      {product.colors.map((color: any, index: number) => (
+                        <div
+                          key={index}
+                          className="w-6 h-6 rounded-full border"
+                          style={{ backgroundColor: color.code }}
+                          title={color.name}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-500">Chưa có màu</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
                     <Button onClick={() => handleEdit(product)}>Sửa</Button>
@@ -379,6 +417,55 @@ export default function ProductsPage() {
                 onChange={handleFileChange}
                 className="w-full border rounded px-3 py-2"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Màu sắc
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={newColor.name}
+                  onChange={(e) =>
+                    setNewColor({ ...newColor, name: e.target.value })
+                  }
+                  placeholder="Tên màu (VD: Đỏ)"
+                  className="w-1/2 border rounded px-3 py-2"
+                />
+                <input
+                  type="text"
+                  value={newColor.code}
+                  onChange={(e) =>
+                    setNewColor({ ...newColor, code: e.target.value })
+                  }
+                  placeholder="Mã màu (VD: #FF0000)"
+                  className="w-1/2 border rounded px-3 py-2"
+                />
+                <Button onClick={handleAddColor}>Thêm</Button>
+              </div>
+              {formData.colors.length > 0 && (
+                <div className="space-y-2">
+                  {formData.colors.map((color, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2"
+                    >
+                      <div
+                        className="w-6 h-6 rounded-full border"
+                        style={{ backgroundColor: color.code }}
+                      />
+                      <span>{color.name}</span>
+                      <button
+                        onClick={() => handleRemoveColor(index)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

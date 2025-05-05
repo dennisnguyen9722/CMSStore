@@ -2,15 +2,16 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 
-// Lấy tất cả sản phẩm kèm ảnh
+// Lấy tất cả sản phẩm kèm ảnh và màu sắc
 const getAllProducts = async (req, res) => {
   try {
     const categoryId = req.query.category_id;
 
     let query = `
-      SELECT p.*, pi.image_url
+      SELECT p.*, pi.image_url, pi.color_id, pc.id AS color_id, pc.color_name, pc.color_code
       FROM products p
       LEFT JOIN product_images pi ON p.id = pi.product_id
+      LEFT JOIN product_colors pc ON p.id = pc.product_id
     `;
 
     const params = [];
@@ -36,11 +37,15 @@ const getAllProducts = async (req, res) => {
           description: row.description,
           is_featured: row.is_featured,
           images: [],
+          colors: [],
         };
         products.push(product);
       }
       if (row.image_url) {
-        product.images.push(row.image_url);
+        product.images.push({ url: row.image_url, color_id: row.color_id });
+      }
+      if (row.color_name && !product.colors.some(c => c.name === row.color_name)) {
+        product.colors.push({ id: row.color_id, name: row.color_name, code: row.color_code });
       }
     });
 
@@ -52,29 +57,24 @@ const getAllProducts = async (req, res) => {
 
 // Tạo sản phẩm mới
 const createProduct = async (req, res) => {
-  const { name, price, stock, category_id, description, is_featured = false } = req.body;
+  const { name, price, stock, category_id, description, is_featured = false, colors = '[]' } = req.body;
   const files = req.files;
 
   try {
+    const parsedColors = JSON.parse(colors); // Mảng [{ name, code, images: [File] }]
     let productId;
 
-    // Kiểm tra xem có id nào bị xoá không
+    // Kiểm tra id tái sử dụng
     const [deletedIds] = await db.query('SELECT id FROM deleted_product_ids ORDER BY id ASC LIMIT 1');
 
     if (deletedIds.length > 0) {
-      // Nếu có id đã xoá, sử dụng lại id đó
       productId = deletedIds[0].id;
-
-      // Xoá id khỏi bảng deleted_product_ids
       await db.query('DELETE FROM deleted_product_ids WHERE id = ?', [productId]);
-
-      // Dùng id đó để chèn sản phẩm mới bằng cách chỉ định rõ ID
       await db.query(
         'INSERT INTO products (id, name, price, stock, category_id, description, is_featured) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [productId, name, price, stock, category_id, description, is_featured]
       );
     } else {
-      // Không có id tái sử dụng => để DB tự tăng
       const [result] = await db.query(
         'INSERT INTO products (name, price, stock, category_id, description, is_featured) VALUES (?, ?, ?, ?, ?, ?)',
         [name, price, stock, category_id, description, is_featured]
@@ -82,10 +82,26 @@ const createProduct = async (req, res) => {
       productId = result.insertId;
     }
 
-    // Thêm ảnh nếu có
+    // Thêm màu sắc và lấy color_id
+    const colorIds = {};
+    if (parsedColors.length > 0) {
+      for (const color of parsedColors) {
+        const [result] = await db.query(
+          'INSERT INTO product_colors (product_id, color_name, color_code) VALUES (?, ?, ?)',
+          [productId, color.name, color.code]
+        );
+        colorIds[color.name] = result.insertId;
+      }
+    }
+
+    // Thêm ảnh
     if (files && files.length > 0) {
-      const insertImages = files.map(file => [productId, `/uploads/${file.filename}`]);
-      await db.query('INSERT INTO product_images (product_id, image_url) VALUES ?', [insertImages]);
+      const insertImages = files.map(file => {
+        const colorName = file.originalname.split('_')[0]; // Giả sử tên file có dạng: <colorName>_image.jpg
+        const colorId = colorIds[colorName] || null;
+        return [productId, `/uploads/${file.filename}`, colorId];
+      });
+      await db.query('INSERT INTO product_images (product_id, image_url, color_id) VALUES ?', [insertImages]);
     }
 
     res.status(201).json({ message: 'Tạo sản phẩm thành công', productId });
@@ -98,11 +114,12 @@ const createProduct = async (req, res) => {
 // Cập nhật sản phẩm
 const updateProduct = async (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, category_id, description, keptOldImages = '[]', is_featured = false } = req.body;
+  const { name, price, stock, category_id, description, keptOldImages = '[]', is_featured = false, colors = '[]' } = req.body;
   const files = req.files;
 
   try {
-    const parsedKeptImages = JSON.parse(keptOldImages); // Mảng các đường dẫn ảnh giữ lại
+    const parsedKeptImages = JSON.parse(keptOldImages);
+    const parsedColors = JSON.parse(colors); // Mảng [{ name, code, images: [File] }]
 
     // Cập nhật thông tin sản phẩm
     await db.query(
@@ -110,18 +127,10 @@ const updateProduct = async (req, res) => {
       [name, price, stock, category_id, description, is_featured, id]
     );
 
-    await db.query(
-      'UPDATE products SET is_featured = ? WHERE id = ?',
-      [is_featured, id]
-    );
-
-    // Lấy tất cả ảnh cũ
+    // Xử lý ảnh
     const [oldImages] = await db.query('SELECT image_url FROM product_images WHERE product_id = ?', [id]);
-
-    // Xác định ảnh nào cần xoá
     const imagesToDelete = oldImages.filter(img => !parsedKeptImages.includes(img.image_url));
 
-    // Xoá ảnh vật lý và DB
     for (const img of imagesToDelete) {
       const imgPath = path.join(__dirname, '..', img.image_url);
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
@@ -134,10 +143,27 @@ const updateProduct = async (req, res) => {
       );
     }
 
-    // Upload ảnh mới nếu có
+    // Xử lý màu sắc
+    await db.query('DELETE FROM product_colors WHERE product_id = ?', [id]); // Xóa màu cũ
+    const colorIds = {};
+    if (parsedColors.length > 0) {
+      for (const color of parsedColors) {
+        const [result] = await db.query(
+          'INSERT INTO product_colors (product_id, color_name, color_code) VALUES (?, ?, ?)',
+          [id, color.name, color.code]
+        );
+        colorIds[color.name] = result.insertId;
+      }
+    }
+
+    // Thêm ảnh mới
     if (files && files.length > 0) {
-      const newImages = files.map(file => [id, `/uploads/${file.filename}`]);
-      await db.query('INSERT INTO product_images (product_id, image_url) VALUES ?', [newImages]);
+      const insertImages = files.map(file => {
+        const colorName = file.originalname.split('_')[0]; // Giả sử tên file có dạng: <colorName>_image.jpg
+        const colorId = colorIds[colorName] || null;
+        return [id, `/uploads/${file.filename}`, colorId];
+      });
+      await db.query('INSERT INTO product_images (product_id, image_url, color_id) VALUES ?', [insertImages]);
     }
 
     res.json({ message: 'Cập nhật sản phẩm thành công' });
@@ -146,26 +172,21 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// Xoá sản phẩm + ảnh
+// Xoá sản phẩm + ảnh + màu sắc
 const deleteProduct = async (req, res) => {
   const { id } = req.params;
 
   try {
     const [images] = await db.query('SELECT image_url FROM product_images WHERE product_id = ?', [id]);
 
-    // Xoá ảnh vật lý
     for (const img of images) {
       const imgPath = path.join(__dirname, '..', img.image_url);
       if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
     }
 
-    // Xoá ảnh trong DB
     await db.query('DELETE FROM product_images WHERE product_id = ?', [id]);
-
-    // Lưu lại id đã xoá vào bảng deleted_product_ids
+    await db.query('DELETE FROM product_colors WHERE product_id = ?', [id]);
     await db.query('INSERT INTO deleted_product_ids (id) VALUES (?)', [id]);
-
-    // Xoá sản phẩm khỏi bảng products
     await db.query('DELETE FROM products WHERE id = ?', [id]);
 
     res.json({ message: 'Xoá sản phẩm thành công' });
@@ -173,7 +194,6 @@ const deleteProduct = async (req, res) => {
     res.status(500).json({ message: 'Lỗi xoá sản phẩm', error: err });
   }
 };
-
 
 const updateFeaturedStatus = async (req, res) => {
   const { id } = req.params;
@@ -191,22 +211,19 @@ const updateFeaturedStatus = async (req, res) => {
 const searchProducts = async (req, res) => {
   const query = req.query.q || "";
   try {
-    // Truy vấn JOIN giữa bảng products và bảng product_images
     const [rows] = await db.query(
-      `SELECT p.id, p.name, p.description, p.price, p.category_id, p.created_at, p.is_featured, p.stock, pi.image_url
+      `SELECT p.id, p.name, p.description, p.price, p.category_id, p.created_at, p.is_featured, p.stock, 
+              pi.image_url, pi.color_id, pc.id AS color_id, pc.color_name, pc.color_code
        FROM products p
        LEFT JOIN product_images pi ON p.id = pi.product_id
+       LEFT JOIN product_colors pc ON p.id = pc.product_id
        WHERE p.name LIKE ?`,
       [`%${query}%`]
     );
 
-    // Tạo mảng ảnh cho mỗi sản phẩm
     const products = rows.reduce((acc, row) => {
-      // Tìm sản phẩm đã có trong acc
       let product = acc.find((p) => p.id === row.id);
-
       if (!product) {
-        // Nếu chưa có, tạo mới sản phẩm và thêm ảnh
         product = {
           id: row.id,
           name: row.name,
@@ -216,16 +233,17 @@ const searchProducts = async (req, res) => {
           created_at: row.created_at,
           is_featured: row.is_featured,
           stock: row.stock,
-          images: row.image_url ? [row.image_url] : [], // Nếu có ảnh, thêm vào mảng images
+          images: [],
+          colors: [],
         };
         acc.push(product);
-      } else {
-        // Nếu đã có, thêm ảnh vào mảng images
-        if (row.image_url && !product.images.includes(row.image_url)) {
-          product.images.push(row.image_url);
-        }
       }
-
+      if (row.image_url) {
+        product.images.push({ url: row.image_url, color_id: row.color_id });
+      }
+      if (row.color_name && !product.colors.some(c => c.name === row.color_name)) {
+        product.colors.push({ id: row.color_id, name: row.color_name, code: row.color_code });
+      }
       return acc;
     }, []);
 
@@ -241,9 +259,10 @@ const getFilteredProducts = async (req, res) => {
   const priceRange = req.query.priceRange ? String(req.query.priceRange).toLowerCase() : null;
 
   let query = `
-    SELECT p.*, pi.image_url
+    SELECT p.*, pi.image_url, pi.color_id, pc.id AS color_id, pc.color_name, pc.color_code
     FROM products p
     LEFT JOIN product_images pi ON p.id = pi.product_id
+    LEFT JOIN product_colors pc ON p.id = pc.product_id
     WHERE 1 = 1
   `;
   const params = [];
@@ -281,11 +300,15 @@ const getFilteredProducts = async (req, res) => {
           description: row.description,
           is_featured: row.is_featured,
           images: [],
+          colors: [],
         };
         products.push(product);
       }
       if (row.image_url) {
-        product.images.push(row.image_url);
+        product.images.push({ url: row.image_url, color_id: row.color_id });
+      }
+      if (row.color_name && !product.colors.some(c => c.name === row.color_name)) {
+        product.colors.push({ id: row.color_id, name: row.color_name, code: row.color_code });
       }
     });
     res.json(products);
@@ -301,7 +324,7 @@ const getProductById = async (req, res) => {
 
   try {
     const query = `
-      SELECT p.*, pi.image_url, pc.color_name, pc.color_code
+      SELECT p.*, pi.image_url, pi.color_id, pc.id AS color_id, pc.color_name, pc.color_code
       FROM products p
       LEFT JOIN product_images pi ON p.id = pi.product_id
       LEFT JOIN product_colors pc ON p.id = pc.product_id
@@ -327,11 +350,11 @@ const getProductById = async (req, res) => {
     };
 
     rows.forEach(row => {
-      if (row.image_url && !product.images.includes(row.image_url)) {
-        product.images.push(row.image_url);
+      if (row.image_url) {
+        product.images.push({ url: row.image_url, color_id: row.color_id });
       }
       if (row.color_name && !product.colors.some(c => c.name === row.color_name)) {
-        product.colors.push({ name: row.color_name, code: row.color_code });
+        product.colors.push({ id: row.color_id, name: row.color_name, code: row.color_code });
       }
     });
 

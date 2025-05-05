@@ -17,17 +17,27 @@ interface CartItem {
 }
 
 interface CheckoutData {
-  orderId: number;
   cartItems: CartItem[];
   fullName: string;
   address: string;
   phone: string;
   userId: string;
+  orderId?: number; // Optional, chỉ có sau khi tạo đơn hàng
+}
+
+interface OrderData {
+  user_id: string;
+  full_name: string;
+  address: string;
+  phone: string;
+  items: { product_id: number; quantity: number }[];
+  status: "pending" | "paid"; // Ràng buộc kiểu cho status
 }
 
 export default function CheckoutPage() {
   const [checkoutData, setCheckoutData] = useState<CheckoutData | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank" | "wallet" | "">("");
+  const [orderStatus, setOrderStatus] = useState<"pending" | "paid" | "cancelled" | "shipped" | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -35,11 +45,27 @@ export default function CheckoutPage() {
     if (data) {
       const parsedData: CheckoutData = JSON.parse(data);
       setCheckoutData(parsedData);
+      if (parsedData.orderId) {
+        fetchOrderStatus(parsedData.orderId);
+      }
     } else {
       toast.error("Không tìm thấy thông tin đơn hàng");
       router.push("/cart");
     }
   }, [router]);
+
+  const fetchOrderStatus = async (orderId: number) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/orders/${orderId}`);
+      if (!response.ok) throw new Error("Lỗi khi lấy trạng thái đơn hàng");
+      const data = await response.json();
+      setOrderStatus(data.status);
+    } catch (err) {
+      const error = err as Error;
+      console.error("Fetch order status error:", error);
+      toast.error(error.message || "Lỗi khi lấy trạng thái đơn hàng");
+    }
+  };
 
   const handlePayment = async () => {
     if (!checkoutData) {
@@ -51,25 +77,68 @@ export default function CheckoutPage() {
       return;
     }
 
+    const orderData: OrderData = {
+      user_id: checkoutData.userId,
+      full_name: checkoutData.fullName,
+      address: checkoutData.address,
+      phone: checkoutData.phone,
+      items: checkoutData.cartItems.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+      })),
+      status: paymentMethod === "cash" ? "pending" : "paid",
+    };
+
     try {
-      const newStatus = paymentMethod === "cash" ? "pending" : "paid";
-      const response = await fetch(`http://localhost:5000/api/orders/${checkoutData.orderId}`, {
-        method: "PUT",
+      const response = await fetch("http://localhost:5000/api/orders", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(orderData),
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Lỗi khi cập nhật trạng thái đơn hàng");
+        throw new Error(errorData.message || "Lỗi khi tạo đơn hàng");
       }
-      toast.success(`Thanh toán thành công! Mã đơn: ${checkoutData.orderId}`);
-      localStorage.removeItem('checkoutData'); // Xóa dữ liệu sau khi thanh toán
+      const data = await response.json();
+      const updatedCheckoutData = { ...checkoutData, orderId: data.orderId };
+      localStorage.setItem('checkoutData', JSON.stringify(updatedCheckoutData));
+      setCheckoutData(updatedCheckoutData);
+      setOrderStatus(orderData.status);
+      toast.success(`Thanh toán thành công! Mã đơn: ${data.orderId}`);
+      localStorage.removeItem('checkoutData');
       window.dispatchEvent(new Event("cartUpdated"));
       router.push("/orders");
     } catch (err) {
       const error = err as Error;
       console.error("Payment error:", error);
       toast.error(error.message || "Lỗi khi thanh toán");
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!checkoutData?.orderId) {
+      toast.error("Không có đơn hàng để hủy");
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/orders/${checkoutData.orderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Lỗi khi hủy đơn hàng");
+      }
+      toast.success(`Hủy đơn hàng #${checkoutData.orderId} thành công`);
+      localStorage.removeItem('checkoutData');
+      window.dispatchEvent(new Event("cartUpdated"));
+      router.push("/cart");
+    } catch (err) {
+      const error = err as Error;
+      console.error("Cancel order error:", error);
+      toast.error(error.message || "Lỗi khi hủy đơn hàng");
     }
   };
 
@@ -88,7 +157,9 @@ export default function CheckoutPage() {
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8 max-w-[1200px]">
-        <h1 className="text-3xl font-bold mb-6">Thanh toán đơn hàng #{checkoutData.orderId}</h1>
+        <h1 className="text-3xl font-bold mb-6">
+          {checkoutData.orderId ? `Thanh toán đơn hàng #${checkoutData.orderId}` : "Xác nhận thanh toán"}
+        </h1>
         {checkoutData.cartItems.length === 0 ? (
           <p>Không có sản phẩm trong đơn hàng</p>
         ) : (
@@ -137,6 +208,7 @@ export default function CheckoutPage() {
                     checked={paymentMethod === "cash"}
                     onChange={() => setPaymentMethod("cash")}
                     className="mr-2"
+                    disabled={!!checkoutData.orderId}
                   />
                   Tiền mặt (Thanh toán khi nhận hàng)
                 </label>
@@ -148,6 +220,7 @@ export default function CheckoutPage() {
                     checked={paymentMethod === "bank"}
                     onChange={() => setPaymentMethod("bank")}
                     className="mr-2"
+                    disabled={!!checkoutData.orderId}
                   />
                   Chuyển khoản ngân hàng
                 </label>
@@ -159,17 +232,29 @@ export default function CheckoutPage() {
                     checked={paymentMethod === "wallet"}
                     onChange={() => setPaymentMethod("wallet")}
                     className="mr-2"
+                    disabled={!!checkoutData.orderId}
                   />
                   Ví điện tử
                 </label>
               </div>
             </div>
-            <button
-              onClick={handlePayment}
-              className="w-full py-3 bg-green-500 text-white rounded-lg hover:bg-green-600"
-            >
-              Xác nhận thanh toán
-            </button>
+            <div className="flex space-x-4">
+              <button
+                onClick={handlePayment}
+                className="w-full py-3 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                disabled={!!checkoutData.orderId}
+              >
+                Xác nhận thanh toán
+              </button>
+              {checkoutData.orderId && orderStatus && ["pending", "paid"].includes(orderStatus) && (
+                <button
+                  onClick={handleCancelOrder}
+                  className="w-full py-3 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                >
+                  Hủy đơn hàng
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

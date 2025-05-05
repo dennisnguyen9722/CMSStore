@@ -128,7 +128,7 @@ export default function CartPage() {
     }
   };
 
-  const handlePlaceOrder = async () => {
+  const handleProceedToCheckout = () => {
     if (!fullName || !address || !phone) {
       toast.error("Vui lòng nhập họ tên, địa chỉ và số điện thoại");
       return;
@@ -138,47 +138,14 @@ export default function CartPage() {
       return;
     }
 
-    const orderData = {
-      user_id: userId,
-      full_name: fullName,
+    localStorage.setItem('checkoutData', JSON.stringify({
+      cartItems,
+      fullName,
       address,
       phone,
-      items: cartItems.map(item => ({
-        product_id: item.product_id,
-        quantity: item.quantity,
-      })),
-      status: 'pending',
-    };
-
-    try {
-      const response = await fetch("http://localhost:5000/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderData),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Lỗi khi tạo đơn hàng");
-      }
-      const data = await response.json();
-      toast.success(`Đặt hàng thành công! Mã đơn: ${data.orderId}`);
-      // Lưu orderId và thông tin cần thiết vào localStorage
-      localStorage.setItem('checkoutData', JSON.stringify({
-        orderId: data.orderId,
-        cartItems,
-        fullName,
-        address,
-        phone,
-        userId,
-      }));
-      setCartItems([]); // Xóa giỏ hàng trên giao diện
-      window.dispatchEvent(new Event("cartUpdated"));
-      router.push("/checkout");
-    } catch (err) {
-      const error = err as Error;
-      console.error("Place order error:", error);
-      toast.error(error.message || "Lỗi khi đặt hàng");
-    }
+      userId,
+    }));
+    router.push("/checkout");
   };
 
   if (error) {
@@ -277,10 +244,10 @@ export default function CartPage() {
                   />
                 </div>
                 <button
-                  onClick={handlePlaceOrder}
+                  onClick={handleProceedToCheckout}
                   className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
                 >
-                  Đặt hàng
+                  Tiến hành thanh toán
                 </button>
               </div>
             </div>
